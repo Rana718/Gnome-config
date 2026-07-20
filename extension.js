@@ -31,6 +31,7 @@ export default class RoundedGapsExtension extends Extension {
         this._windowSignals = new Map();
         this._processing = new Set();
         this._pendingWindows = new Set();
+        this._gappedRects = new Map(); // win -> {x, y, width, height} after gaps applied
         this._settings = null;
         this._timeouts = [];
         this._settingsConnections = [];
@@ -155,43 +156,59 @@ export default class RoundedGapsExtension extends Extension {
     // ===================== WINDOW GAPS =====================
 
     _enableGaps() {
+        // Apply to already maximized windows
         for (const actor of global.get_window_actors()) {
             const win = actor.meta_window;
             if (win && win.get_window_type() === Meta.WindowType.NORMAL) {
                 this._trackWindow(win);
-                this._applyGapsImmediate(win);
+                if (this._getMaximizeFlags(win) !== 0)
+                    this._scheduleApply(win);
             }
         }
 
+        // Mouse drag tiling
         this._connectSignal(global.display, 'grab-op-end', (display, window) => {
             if (window && window.get_window_type() === Meta.WindowType.NORMAL) {
-                this._scheduleApply(window);
+                const flags = this._getMaximizeFlags(window);
+                if (flags !== 0 && !this._processing.has(window)) {
+                    const rect = window.get_frame_rect();
+                    const workArea = window.get_work_area_current_monitor();
+                    const isFullWidth = rect.width >= workArea.width - 10;
+                    const isFullHeight = rect.height >= workArea.height - 10;
+                    if (isFullWidth || isFullHeight) {
+                        this._gappedRects.delete(window);
+                        this._scheduleApply(window);
+                    }
+                }
             }
         });
 
+        // New windows
         this._connectSignal(global.display, 'window-created', (display, window) => {
             if (window && window.get_window_type() === Meta.WindowType.NORMAL) {
                 this._trackWindow(window);
-                this._scheduleApply(window);
             }
         });
 
-        this._connectSignal(global.display, 'restacked', () => {
-            for (const actor of global.get_window_actors()) {
-                const win = actor.meta_window;
-                if (win && win.get_window_type() === Meta.WindowType.NORMAL) {
-                    if (this._getMaximizeFlags(win) !== 0 && !this._processing.has(win)) {
-                        this._scheduleApply(win);
-                    }
-                }
+        // On focus change: if window grew beyond gapped size, snap it back
+        this._connectSignal(global.display, 'notify::focus-window', () => {
+            const win = global.display.focus_window;
+            if (!win || this._processing.has(win)) return;
+            const saved = this._gappedRects.get(win);
+            if (!saved) return;
+
+            const rect = win.get_frame_rect();
+            if (rect.width > saved.width + 5 || rect.height > saved.height + 5) {
+                win.move_frame(true, saved.x, saved.y);
+                win.move_resize_frame(true, saved.x, saved.y, saved.width, saved.height);
             }
         });
     }
 
     _disableGaps() {
-        for (const id of this._timeouts) {
+        this._gappedRects.clear();
+        for (const id of this._timeouts)
             GLib.source_remove(id);
-        }
         this._timeouts = [];
 
         for (const signal of this._signals) {
@@ -200,9 +217,8 @@ export default class RoundedGapsExtension extends Extension {
         this._signals = [];
 
         for (const [win, ids] of this._windowSignals) {
-            for (const id of ids) {
+            for (const id of ids)
                 try { win.disconnect(id); } catch (e) {}
-            }
         }
         this._windowSignals.clear();
         this._processing.clear();
@@ -215,10 +231,8 @@ export default class RoundedGapsExtension extends Extension {
     }
 
     _getMaximizeFlags(win) {
-        if (win.get_maximize_flags)
-            return win.get_maximize_flags();
-        if (win.get_maximized)
-            return win.get_maximized();
+        if (win.get_maximize_flags) return win.get_maximize_flags();
+        if (win.get_maximized) return win.get_maximized();
         return 0;
     }
 
@@ -232,30 +246,45 @@ export default class RoundedGapsExtension extends Extension {
     }
 
     _trackWindow(win) {
-        if (!win || this._windowSignals.has(win))
-            return;
+        if (!win || this._windowSignals.has(win)) return;
 
+        const ids = [];
+
+        // Detect when window becomes maximized (keyboard shortcuts)
         const sizeId = win.connect('size-changed', () => {
-            if (!this._processing.has(win) && !this._pendingWindows.has(win)) {
-                if (this._getMaximizeFlags(win) !== 0) {
-                    this._scheduleApply(win);
-                }
+            if (this._processing.has(win) || this._pendingWindows.has(win))
+                return;
+
+            const flags = this._getMaximizeFlags(win);
+            if (flags === 0) return;
+
+            const rect = win.get_frame_rect();
+            const workArea = win.get_work_area_current_monitor();
+            const gap = this._getSetting('gap-size', DEFAULT_GAP);
+
+            const atFullWidth = Math.abs(rect.width - workArea.width) < gap;
+            const atHalfWidth = Math.abs(rect.width - Math.floor(workArea.width / 2)) < gap;
+            const atFullHeight = Math.abs(rect.height - workArea.height) < gap;
+
+            if ((atFullWidth || atHalfWidth) && atFullHeight) {
+                this._scheduleApply(win);
             }
         });
+        ids.push(sizeId);
 
         const unmanagedId = win.connect('unmanaged', () => {
             this._untrackWindow(win);
         });
+        ids.push(unmanagedId);
 
-        this._windowSignals.set(win, [sizeId, unmanagedId]);
+        this._windowSignals.set(win, ids);
     }
 
     _untrackWindow(win) {
         const ids = this._windowSignals.get(win);
         if (ids) {
-            for (const id of ids) {
+            for (const id of ids)
                 try { win.disconnect(id); } catch (e) {}
-            }
             this._windowSignals.delete(win);
         }
         this._processing.delete(win);
@@ -263,16 +292,14 @@ export default class RoundedGapsExtension extends Extension {
     }
 
     _scheduleApply(win) {
-        if (this._pendingWindows.has(win) || this._processing.has(win))
-            return;
-
+        if (this._pendingWindows.has(win) || this._processing.has(win)) return;
         this._pendingWindows.add(win);
-        const delay = this._getSetting('animation-delay', DEFAULT_ANIMATION_DELAY);
 
+        const delay = this._getSetting('animation-delay', DEFAULT_ANIMATION_DELAY);
         const id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
             this._removeTimeout(id);
             this._pendingWindows.delete(win);
-            this._applyGapsImmediate(win);
+            this._applyGaps(win);
             return GLib.SOURCE_REMOVE;
         });
         this._timeouts.push(id);
@@ -283,81 +310,73 @@ export default class RoundedGapsExtension extends Extension {
         if (idx !== -1) this._timeouts.splice(idx, 1);
     }
 
-    _applyGapsImmediate(win) {
-        if (!win || this._processing.has(win))
-            return;
+    _applyGaps(win) {
+        if (!win || this._processing.has(win)) return;
 
         const maximized = this._getMaximizeFlags(win);
-        if (maximized === 0)
-            return;
+        if (maximized === 0) return;
 
         const gap = this._getSetting('gap-size', DEFAULT_GAP);
         const workArea = win.get_work_area_current_monitor();
 
         this._processing.add(win);
 
-        try {
-            if (maximized === Meta.MaximizeFlags.BOTH) {
-                this._unmaximizeWindow(win, Meta.MaximizeFlags.BOTH);
-                win.move_resize_frame(
-                    true,
-                    workArea.x + gap,
-                    workArea.y + gap,
-                    workArea.width - (gap * 2),
-                    workArea.height - (gap * 2)
-                );
+        // Calculate target position BEFORE unmaximizing
+        let targetX, targetY, targetW, targetH;
 
-            } else if (maximized === Meta.MaximizeFlags.VERTICAL) {
-                const rect = win.get_frame_rect();
-                const halfWidth = Math.floor(workArea.width / 2);
-                const isLeft = rect.x < workArea.x + halfWidth;
+        if (maximized === Meta.MaximizeFlags.BOTH) {
+            targetX = workArea.x + gap;
+            targetY = workArea.y + gap;
+            targetW = workArea.width - (gap * 2);
+            targetH = workArea.height - (gap * 2);
+        } else if (maximized === Meta.MaximizeFlags.VERTICAL) {
+            const rect = win.get_frame_rect();
+            const halfWidth = Math.floor(workArea.width / 2);
+            const isLeft = rect.x < workArea.x + halfWidth;
 
-                this._unmaximizeWindow(win, Meta.MaximizeFlags.VERTICAL);
-
-                if (isLeft) {
-                    win.move_resize_frame(
-                        true,
-                        workArea.x + gap,
-                        workArea.y + gap,
-                        halfWidth - gap - Math.floor(gap / 2),
-                        workArea.height - (gap * 2)
-                    );
-                } else {
-                    win.move_resize_frame(
-                        true,
-                        workArea.x + halfWidth + Math.floor(gap / 2),
-                        workArea.y + gap,
-                        halfWidth - gap - Math.floor(gap / 2),
-                        workArea.height - (gap * 2)
-                    );
-                }
-
-            } else if (maximized === Meta.MaximizeFlags.HORIZONTAL) {
-                this._unmaximizeWindow(win, Meta.MaximizeFlags.HORIZONTAL);
-                const rect = win.get_frame_rect();
-                win.move_resize_frame(
-                    true,
-                    workArea.x + gap,
-                    rect.y,
-                    workArea.width - (gap * 2),
-                    rect.height
-                );
-
+            targetY = workArea.y + gap;
+            targetH = workArea.height - (gap * 2);
+            if (isLeft) {
+                targetX = workArea.x + gap;
+                targetW = halfWidth - gap - Math.floor(gap / 2);
             } else {
-                this._processing.delete(win);
-                return;
+                targetX = workArea.x + halfWidth + Math.floor(gap / 2);
+                targetW = halfWidth - gap - Math.floor(gap / 2);
             }
-        } catch (e) {
+        } else if (maximized === Meta.MaximizeFlags.HORIZONTAL) {
+            const rect = win.get_frame_rect();
+            targetX = workArea.x + gap;
+            targetY = rect.y;
+            targetW = workArea.width - (gap * 2);
+            targetH = rect.height;
+        } else {
             this._processing.delete(win);
             return;
         }
 
-        const id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
-            this._processing.delete(win);
-            this._removeTimeout(id);
+        // Unmaximize and resize
+        this._gappedRects.set(win, {x: targetX, y: targetY, width: targetW, height: targetH});
+        this._unmaximizeWindow(win, maximized);
+
+        const resizeId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+            this._removeTimeout(resizeId);
+            try {
+                // move_frame before move_resize_frame fixes issues with some terminals
+                win.move_frame(true, targetX, targetY);
+                win.move_resize_frame(true, targetX, targetY, targetW, targetH);
+            } catch (e) {}
+
+            // Hold processing lock long enough for GNOME to settle
+            const clearId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+                this._processing.delete(win);
+                this._removeTimeout(clearId);
+                return GLib.SOURCE_REMOVE;
+            });
+            this._timeouts.push(clearId);
+
             return GLib.SOURCE_REMOVE;
         });
-        this._timeouts.push(id);
+        this._timeouts.push(resizeId);
     }
 
     // ===================== ROUNDED CORNERS =====================
@@ -421,10 +440,6 @@ export default class RoundedGapsExtension extends Extension {
             const effect = new RoundedCornersEffect();
             actor.add_effect_with_name('rounded-gaps-corners', effect);
             this._corneredActors.add(actor);
-
-            actor.connect('destroy', () => {
-                this._corneredActors.delete(actor);
-            });
         } catch (e) {
             log(`[Rounded Gaps] Failed to apply corner effect: ${e.message}`);
         }
@@ -478,24 +493,7 @@ const RoundedCornersEffect = GObject.registerClass(
 
                 if (actorWidth > 0 && actorHeight > 0) {
                     const radius = RoundedCornersEffect._radius;
-
-                    // Get the window frame rect and buffer rect to find shadow offsets
-                    const frameRect = actor.meta_window.get_frame_rect();
-                    const bufferRect = actor.meta_window.get_buffer_rect();
-
-                    // Calculate the offset of the actual window content within the actor
-                    // (actor includes shadows around the window)
-                    const offsetX = frameRect.x - bufferRect.x;
-                    const offsetY = frameRect.y - bufferRect.y;
-                    const windowWidth = frameRect.width;
-                    const windowHeight = frameRect.height;
-
-                    const bounds = [
-                        offsetX,
-                        offsetY,
-                        offsetX + windowWidth,
-                        offsetY + windowHeight
-                    ];
+                    const bounds = [0, 0, actorWidth, actorHeight];
 
                     this.set_uniform_float(this._uBounds, 4, bounds);
                     this.set_uniform_float(this._uClipRadius, 1, [radius]);
