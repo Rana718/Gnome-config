@@ -431,16 +431,17 @@ export default class RoundedGapsExtension extends Extension {
     }
 
     // ===================== TOP BAR =====================
-    // Styling comes from stylesheet.css (loaded at session start).
-    // Additionally applies popup transparency via JS for immediate effect.
+    // Makes the panel background transparent (85% solid on buttons).
+    // Popups are left to GNOME default — no popup styling.
 
     _enableTopBar() {
-        // Nothing needed for panel — stylesheet.css handles #panel styles
-        // But we can't reload CSS mid-session, so no-op here
+        Main.panel.add_style_class_name('transparent-panel');
+        Main.panel.set_style('background-color: transparent;');
     }
 
     _disableTopBar() {
-        // Nothing to undo — CSS is session-level
+        Main.panel.remove_style_class_name('transparent-panel');
+        Main.panel.set_style('');
     }
 }
 
