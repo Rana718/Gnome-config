@@ -21,19 +21,6 @@
             <range min="0" max="1000"/>
         </key>
 
-        <!-- Rounded Corners -->
-        <key name="corners-enabled" type="b">
-            <default>true</default>
-            <summary>Enable rounded corners</summary>
-            <description>Force rounded corners on all windows including Chrome, Firefox, etc.</description>
-        </key>
-        <key name="corner-radius" type="i">
-            <default>12</default>
-            <summary>Corner radius in pixels</summary>
-            <description>The border radius applied to window corners.</description>
-            <range min="0" max="32"/>
-        </key>
-
         <!-- Top Bar -->
         <key name="topbar-enabled" type="b">
             <default>true</default>

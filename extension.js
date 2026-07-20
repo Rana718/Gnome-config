@@ -9,7 +9,7 @@
  * - Custom keybinding handling (Super+Arrow keys)
  * - Edge-drag detection for mouse-based tiling
  * - Transparent top bar (via stylesheet.css)
- * - Forced rounded corners on all NORMAL windows (GLSL shader)
+ * - Aggressive size enforcement (Brave/Chrome fix)
  *
  * License: GPL-3.0
  */
@@ -17,10 +17,7 @@
 import GLib from "gi://GLib";
 import Gio from "gi://Gio";
 import Meta from "gi://Meta";
-import GObject from "gi://GObject";
-import Cogl from "gi://Cogl";
 import Shell from "gi://Shell";
-import Clutter from "gi://Clutter";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 
@@ -43,11 +40,8 @@ export default class RoundedGapsExtension extends Extension {
       this._tiledRects = new Map(); // Meta.Window -> {x, y, width, height} target after gaps
       this._processing = new Set(); // Windows currently being repositioned
 
-      // Rounded corners
-      this._corneredActors = new Set();
-      this._shaderDeclarations = null;
-      this._shaderCode = null;
-      this._cornerAddedSignal = null;
+      // Per-window size-changed signal IDs for aggressive enforcement
+      this._sizeSignals = new Map(); // Meta.Window -> signal id
 
       // Saved GNOME settings to restore on disable
       this._savedEdgeTiling = null;
@@ -67,7 +61,6 @@ export default class RoundedGapsExtension extends Extension {
 
    enable() {
       this._settings = this.getSettings();
-      this._loadShader();
 
       if (this._getSetting("gaps-enabled", true)) {
          this._enableGaps();
@@ -75,10 +68,6 @@ export default class RoundedGapsExtension extends Extension {
 
       if (this._getSetting("topbar-enabled", true)) {
          this._enableTopBar();
-      }
-
-      if (this._getSetting("corners-enabled", true)) {
-         this._enableCorners();
       }
 
       // Watch for live settings changes
@@ -95,27 +84,11 @@ export default class RoundedGapsExtension extends Extension {
             else this._disableTopBar();
          }),
       );
-      this._settingsConnections.push(
-         this._settings.connect("changed::corners-enabled", () => {
-            if (this._settings.get_boolean("corners-enabled"))
-               this._enableCorners();
-            else this._disableCorners();
-         }),
-      );
-      this._settingsConnections.push(
-         this._settings.connect("changed::corner-radius", () => {
-            if (this._getSetting("corners-enabled", true)) {
-               this._disableCorners();
-               this._enableCorners();
-            }
-         }),
-      );
    }
 
    disable() {
       this._disableGaps();
       this._disableTopBar();
-      this._disableCorners();
 
       // Disconnect settings watchers
       if (this._settings) {
@@ -143,40 +116,8 @@ export default class RoundedGapsExtension extends Extension {
    }
 
    // =========================================================================
-   // SHADER LOADING
+   // GAPS
    // =========================================================================
-
-   _loadShader() {
-      try {
-         const shaderFile = Gio.File.new_for_path(
-            `${this.path}/shader/rounded_corners.frag`,
-         );
-         const [ok, contents] = shaderFile.load_contents(null);
-         if (!ok) return;
-
-         const shaderSource = new TextDecoder().decode(contents);
-
-         // Split shader into declarations (uniforms, functions before main)
-         // and the body of main() for add_glsl_snippet
-         const mainMatch = shaderSource.match(/void\s+main\s*\(\s*\)\s*\{/);
-         if (!mainMatch) return;
-
-         const mainIdx = mainMatch.index;
-         this._shaderDeclarations = shaderSource.substring(0, mainIdx).trim();
-
-         // Extract body between the braces of main()
-         const afterMain = shaderSource.substring(
-            mainIdx + mainMatch[0].length,
-         );
-         // Find matching closing brace (simple: last '}')
-         const lastBrace = afterMain.lastIndexOf("}");
-         this._shaderCode = afterMain.substring(0, lastBrace).trim();
-      } catch (e) {
-         log(`[Rounded Gaps] Failed to load shader: ${e.message}`);
-         this._shaderDeclarations = null;
-         this._shaderCode = null;
-      }
-   }
 
    _enableGaps() {
       // --- Step 1: Disable GNOME's built-in edge tiling ---
@@ -243,7 +184,7 @@ export default class RoundedGapsExtension extends Extension {
          this._onTileRestore.bind(this),
       );
 
-      // --- Step 4b: Apply gaps to already maximized/tiled windows ---
+      // --- Step 5: Apply gaps to already maximized/tiled windows ---
       for (const actor of global.get_window_actors()) {
          const win = actor.meta_window;
          if (!win || win.get_window_type() !== Meta.WindowType.NORMAL) continue;
@@ -266,25 +207,25 @@ export default class RoundedGapsExtension extends Extension {
          }
       }
 
-      // --- Step 5: Detect edge drags via grab-op-end ---
+      // --- Step 6: Detect edge drags via grab-op-end ---
       this._connectSignal(global.display, "grab-op-end", (display, window) => {
          if (!window || window.get_window_type() !== Meta.WindowType.NORMAL)
             return;
          if (this._processing.has(window)) return;
 
-         // Small delay to let the grab settle
-         const id = this._addTimeout(50, () => {
+         this._addTimeout(50, () => {
             this._detectEdgeDrag(window);
          });
       });
 
-      // --- Step 6: Track window destruction + apply gaps to newly created maximized windows ---
+      // --- Step 7: Track window destruction + apply gaps to newly created maximized windows ---
       this._connectSignal(
          global.display,
          "window-created",
          (display, window) => {
             if (window && window.get_window_type() === Meta.WindowType.NORMAL) {
                const unmId = window.connect("unmanaged", () => {
+                  this._disconnectSizeSignal(window);
                   this._tileState.delete(window);
                   this._originalRects.delete(window);
                   this._tiledRects.delete(window);
@@ -301,7 +242,6 @@ export default class RoundedGapsExtension extends Extension {
                   if (flags === Meta.MaximizeFlags.BOTH) {
                      this._tileWindow(window, TileState.MAXIMIZED);
                   } else if (flags === Meta.MaximizeFlags.VERTICAL) {
-                     // Half-tiled - detect left or right
                      const rect = window.get_frame_rect();
                      const workArea = window.get_work_area_current_monitor();
                      const halfWidth = Math.floor(workArea.width / 2);
@@ -315,28 +255,6 @@ export default class RoundedGapsExtension extends Extension {
             }
          },
       );
-
-      // --- Step 6: On focus change, snap back windows that grew (Chrome/Brave fix) ---
-      this._connectSignal(global.display, "notify::focus-window", () => {
-         const win = global.display.focus_window;
-         if (!win || this._processing.has(win)) return;
-
-         const saved = this._tiledRects.get(win);
-         if (!saved) return;
-
-         // Check if window grew beyond saved size
-         const rect = win.get_frame_rect();
-         if (rect.width > saved.width + 3 || rect.height > saved.height + 3) {
-            win.move_frame(true, saved.x, saved.y);
-            win.move_resize_frame(
-               true,
-               saved.x,
-               saved.y,
-               saved.width,
-               saved.height,
-            );
-         }
-      });
    }
 
    _disableGaps() {
@@ -396,6 +314,14 @@ export default class RoundedGapsExtension extends Extension {
       this._savedWmMaximize = null;
       this._savedWmUnmaximize = null;
 
+      // Disconnect all per-window size signals
+      for (const [win, sigId] of this._sizeSignals) {
+         try {
+            win.disconnect(sigId);
+         } catch (e) {}
+      }
+      this._sizeSignals.clear();
+
       // Disconnect all signals
       for (const signal of this._signals) {
          try {
@@ -452,10 +378,8 @@ export default class RoundedGapsExtension extends Extension {
       const currentState = this._tileState.get(win) || TileState.NONE;
 
       if (currentState !== TileState.NONE) {
-         // Restore to original size
          this._restoreWindow(win);
       } else {
-         // Already restored, minimize
          win.minimize();
       }
    }
@@ -468,7 +392,6 @@ export default class RoundedGapsExtension extends Extension {
       const rect = win.get_frame_rect();
       const workArea = win.get_work_area_current_monitor();
 
-      // Threshold in pixels for detecting edge proximity
       const threshold = 5;
 
       const atLeftEdge = Math.abs(rect.x - workArea.x) < threshold;
@@ -477,19 +400,15 @@ export default class RoundedGapsExtension extends Extension {
          threshold;
       const atTopEdge = Math.abs(rect.y - workArea.y) < threshold;
 
-      // Check if window was dragged to fill a significant portion (like GNOME's snap)
       const fillsHeight = rect.height >= workArea.height - threshold * 2;
 
       if (atTopEdge && !atLeftEdge && !atRightEdge) {
-         // Dragged to top edge => maximize with gaps
          this._saveOriginalRect(win);
          this._tileWindow(win, TileState.MAXIMIZED);
       } else if (atLeftEdge && fillsHeight) {
-         // Dragged to left edge => tile left
          this._saveOriginalRect(win);
          this._tileWindow(win, TileState.LEFT);
       } else if (atRightEdge && fillsHeight) {
-         // Dragged to right edge => tile right
          this._saveOriginalRect(win);
          this._tileWindow(win, TileState.RIGHT);
       }
@@ -499,10 +418,6 @@ export default class RoundedGapsExtension extends Extension {
    // TILING LOGIC
    // =========================================================================
 
-   /**
-    * Save the window's current frame rect as its "original" position,
-    * but only if it's not already tiled by us.
-    */
    _saveOriginalRect(win) {
       const currentState = this._tileState.get(win) || TileState.NONE;
       if (currentState === TileState.NONE && !this._originalRects.has(win)) {
@@ -516,9 +431,6 @@ export default class RoundedGapsExtension extends Extension {
       }
    }
 
-   /**
-    * Calculate the target rectangle for a given tile state.
-    */
    _calculateTileRect(win, state) {
       const gap = this._getSetting("gap-size", 8);
       const workArea = win.get_work_area_current_monitor();
@@ -556,8 +468,8 @@ export default class RoundedGapsExtension extends Extension {
 
    /**
     * Tile a window to the given state with gaps.
-    * Uses the WinTile/gTile approach: unmaximize first if needed,
-    * then move_frame + move_resize_frame.
+    * After tiling, connects a size-changed signal to aggressively
+    * enforce the correct size if the app tries to resize itself.
     */
    _tileWindow(win, state) {
       if (this._processing.has(win)) return;
@@ -567,7 +479,7 @@ export default class RoundedGapsExtension extends Extension {
 
       this._processing.add(win);
       this._tileState.set(win, state);
-      this._tiledRects.set(win, target); // Save target for focus-snap
+      this._tiledRects.set(win, target);
 
       // If the window is currently maximized by GNOME, unmaximize first
       const flags = this._getMaximizeFlags(win);
@@ -575,8 +487,6 @@ export default class RoundedGapsExtension extends Extension {
          this._unmaximizeWindow(win, flags);
       }
 
-      // Use WinTile approach: move_frame first, then move_resize_frame
-      // A small delay ensures GNOME's unmaximize animation completes
       const delay = flags !== 0 ? this._getSetting("animation-delay", 250) : 50;
 
       this._addTimeout(delay, () => {
@@ -593,11 +503,70 @@ export default class RoundedGapsExtension extends Extension {
             log(`[Rounded Gaps] Error tiling window: ${e.message}`);
          }
 
-         // Keep processing lock briefly to prevent re-entry
-         this._addTimeout(300, () => {
+         // Connect aggressive size enforcement after initial tile
+         this._addTimeout(100, () => {
+            this._connectSizeEnforcement(win);
             this._processing.delete(win);
          });
       });
+   }
+
+   /**
+    * Connect a size-changed signal on the window. If the window resizes
+    * beyond what we set, immediately force it back. This handles apps
+    * like Brave, Chrome, etc. that fight the resize.
+    */
+   _connectSizeEnforcement(win) {
+      // Disconnect any existing signal first
+      this._disconnectSizeSignal(win);
+
+      const sigId = win.connect("size-changed", () => {
+         if (this._processing.has(win)) return;
+
+         const saved = this._tiledRects.get(win);
+         if (!saved) return;
+
+         const rect = win.get_frame_rect();
+
+         // If the window deviates from our target by more than 2px, force it back
+         const dx = Math.abs(rect.x - saved.x);
+         const dy = Math.abs(rect.y - saved.y);
+         const dw = Math.abs(rect.width - saved.width);
+         const dh = Math.abs(rect.height - saved.height);
+
+         if (dx > 2 || dy > 2 || dw > 2 || dh > 2) {
+            this._processing.add(win);
+            try {
+               win.move_frame(true, saved.x, saved.y);
+               win.move_resize_frame(
+                  true,
+                  saved.x,
+                  saved.y,
+                  saved.width,
+                  saved.height,
+               );
+            } catch (e) {}
+            // Brief lock to prevent signal loop
+            this._addTimeout(50, () => {
+               this._processing.delete(win);
+            });
+         }
+      });
+
+      this._sizeSignals.set(win, sigId);
+   }
+
+   /**
+    * Disconnect the size enforcement signal from a window.
+    */
+   _disconnectSizeSignal(win) {
+      const sigId = this._sizeSignals.get(win);
+      if (sigId !== undefined) {
+         try {
+            win.disconnect(sigId);
+         } catch (e) {}
+         this._sizeSignals.delete(win);
+      }
    }
 
    /**
@@ -609,6 +578,7 @@ export default class RoundedGapsExtension extends Extension {
       const original = this._originalRects.get(win);
       this._tileState.set(win, TileState.NONE);
       this._tiledRects.delete(win);
+      this._disconnectSizeSignal(win);
       this._processing.add(win);
 
       if (original) {
@@ -636,20 +606,12 @@ export default class RoundedGapsExtension extends Extension {
    // MUTTER 18 COMPATIBILITY HELPERS
    // =========================================================================
 
-   /**
-    * Get maximize flags - Mutter 18 uses get_maximize_flags(),
-    * older versions use get_maximized().
-    */
    _getMaximizeFlags(win) {
       if (win.get_maximize_flags) return win.get_maximize_flags();
       if (win.get_maximized) return win.get_maximized();
       return 0;
    }
 
-   /**
-    * Unmaximize window - Mutter 18 uses set_unmaximize_flags(flags)
-    * then unmaximize() with no args. Older versions use unmaximize(flags).
-    */
    _unmaximizeWindow(win, flags) {
       if (win.set_unmaximize_flags) {
          win.set_unmaximize_flags(flags);
@@ -685,71 +647,6 @@ export default class RoundedGapsExtension extends Extension {
    }
 
    // =========================================================================
-   // ROUNDED CORNERS (GLSL SHADER EFFECT)
-   // =========================================================================
-
-   _enableCorners() {
-      if (!this._shaderDeclarations || !this._shaderCode) return;
-
-      const radius = this._getSetting("corner-radius", 12);
-
-      // Set static properties on the effect class
-      RoundedCornersEffect._shaderDeclarations = this._shaderDeclarations;
-      RoundedCornersEffect._shaderCode = this._shaderCode;
-      RoundedCornersEffect._radius = radius;
-
-      // Apply to existing windows
-      for (const actor of global.get_window_actors()) {
-         this._applyCornerEffect(actor);
-      }
-
-      // Apply to new windows when added to window_group
-      this._cornerAddedSignal = global.window_group.connect(
-         "child-added",
-         (_group, actor) => {
-            this._addTimeout(100, () => {
-               this._applyCornerEffect(actor);
-            });
-         },
-      );
-   }
-
-   _disableCorners() {
-      if (this._cornerAddedSignal) {
-         global.window_group.disconnect(this._cornerAddedSignal);
-         this._cornerAddedSignal = null;
-      }
-
-      for (const actor of this._corneredActors) {
-         try {
-            const effect = actor.get_effect("rounded-gaps-corners");
-            if (effect) actor.remove_effect(effect);
-         } catch (e) {}
-      }
-      this._corneredActors.clear();
-   }
-
-   _applyCornerEffect(actor) {
-      if (!actor || !this._shaderDeclarations || !this._shaderCode) return;
-
-      // Only apply to NORMAL application windows
-      if (!actor.meta_window) return;
-      if (actor.meta_window.get_window_type() !== Meta.WindowType.NORMAL)
-         return;
-
-      // Skip if already applied
-      if (actor.get_effect("rounded-gaps-corners")) return;
-
-      try {
-         const effect = new RoundedCornersEffect();
-         actor.add_effect_with_name("rounded-gaps-corners", effect);
-         this._corneredActors.add(actor);
-      } catch (e) {
-         log(`[Rounded Gaps] Failed to apply corner effect: ${e.message}`);
-      }
-   }
-
-   // =========================================================================
    // TOP BAR (TRANSPARENT)
    // =========================================================================
 
@@ -763,58 +660,3 @@ export default class RoundedGapsExtension extends Extension {
       Main.panel.set_style("");
    }
 }
-
-// =============================================================================
-// ROUNDED CORNERS GLSL EFFECT
-// =============================================================================
-
-const RoundedCornersEffect = GObject.registerClass(
-   {},
-   class RoundedCornersEffect extends Shell.GLSLEffect {
-      // Static properties set by the extension before instantiation
-      static _shaderDeclarations = "";
-      static _shaderCode = "";
-      static _radius = 12;
-
-      _init() {
-         super._init();
-         this._uBounds = this.get_uniform_location("bounds");
-         this._uClipRadius = this.get_uniform_location("clipRadius");
-         this._uPixelStep = this.get_uniform_location("pixelStep");
-      }
-
-      vfunc_build_pipeline() {
-         this.add_glsl_snippet(
-            Cogl.SnippetHook.FRAGMENT,
-            RoundedCornersEffect._shaderDeclarations,
-            RoundedCornersEffect._shaderCode,
-            false,
-         );
-      }
-
-      vfunc_paint_target(node, paintContext) {
-         const actor = this.get_actor();
-         if (actor && actor.meta_window) {
-            const actorWidth = actor.get_width();
-            const actorHeight = actor.get_height();
-
-            if (actorWidth > 0 && actorHeight > 0) {
-               this.set_uniform_float(this._uBounds, 4, [
-                  0,
-                  0,
-                  actorWidth,
-                  actorHeight,
-               ]);
-               this.set_uniform_float(this._uClipRadius, 1, [
-                  RoundedCornersEffect._radius,
-               ]);
-               this.set_uniform_float(this._uPixelStep, 2, [
-                  1.0 / actorWidth,
-                  1.0 / actorHeight,
-               ]);
-            }
-         }
-         super.vfunc_paint_target(node, paintContext);
-      }
-   },
-);

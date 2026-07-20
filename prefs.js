@@ -63,45 +63,6 @@ export default class RoundedGapsPreferences extends ExtensionPreferences {
         settings.bind('animation-delay', animDelayRow, 'value', 0);
         gapsSettingsGroup.add(animDelayRow);
 
-        // ===================== CORNERS PAGE =====================
-        const cornersPage = new Adw.PreferencesPage({
-            title: 'Corners',
-            icon_name: 'preferences-desktop-display-symbolic',
-        });
-        window.add(cornersPage);
-
-        const cornersEnableGroup = new Adw.PreferencesGroup({
-            title: 'Rounded Corners',
-            description: 'Force rounded corners on ALL windows (Chrome, Firefox, etc.)',
-        });
-        cornersPage.add(cornersEnableGroup);
-
-        const cornersEnabledRow = new Adw.SwitchRow({
-            title: 'Enable Rounded Corners',
-            subtitle: 'Apply rounded corners to all application windows',
-        });
-        settings.bind('corners-enabled', cornersEnabledRow, 'active', 0);
-        cornersEnableGroup.add(cornersEnabledRow);
-
-        const cornersSettingsGroup = new Adw.PreferencesGroup({
-            title: 'Corner Settings',
-        });
-        cornersPage.add(cornersSettingsGroup);
-
-        const cornerRadiusRow = new Adw.SpinRow({
-            title: 'Corner Radius',
-            subtitle: 'Roundness of window corners (0–32px)',
-            adjustment: new Gtk.Adjustment({
-                lower: 0,
-                upper: 32,
-                step_increment: 1,
-                page_increment: 4,
-                value: settings.get_int('corner-radius'),
-            }),
-        });
-        settings.bind('corner-radius', cornerRadiusRow, 'value', 0);
-        cornersSettingsGroup.add(cornerRadiusRow);
-
         // ===================== TOP BAR PAGE =====================
         const topbarPage = new Adw.PreferencesPage({
             title: 'Top Bar',
@@ -132,20 +93,6 @@ export default class RoundedGapsPreferences extends ExtensionPreferences {
             title: 'Stylesheet Location',
             subtitle: `${this.path}/stylesheet.css`,
         });
-
-        const openButton = new Gtk.Button({
-            label: 'Open CSS File',
-            valign: Gtk.Align.CENTER,
-        });
-        openButton.connect('clicked', () => {
-            const file = Gtk.gio.File.new_for_path(`${this.path}/stylesheet.css`);
-            try {
-                Gtk.show_uri(window, `file://${this.path}/stylesheet.css`, 0);
-            } catch (e) {
-                // Fallback - just show the path
-            }
-        });
-        cssPathRow.add_suffix(openButton);
         topbarInfoGroup.add(cssPathRow);
     }
 }
