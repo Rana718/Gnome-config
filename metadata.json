@@ -1,0 +1,9 @@
+{
+  "name": "Rounded Gaps",
+  "description": "Hyprland-style gaps for tiled/maximized windows + transparent top bar with pill-shaped indicators. Fully configurable.",
+  "uuid": "custom-gaps@custom",
+  "shell-version": ["50"],
+  "version": 3,
+  "url": "",
+  "settings-schema": "org.gnome.shell.extensions.custom-gaps"
+}

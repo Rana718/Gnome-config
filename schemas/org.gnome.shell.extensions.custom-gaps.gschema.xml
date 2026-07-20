@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="custom-gaps">
+    <schema path="/org/gnome/shell/extensions/custom-gaps/" id="org.gnome.shell.extensions.custom-gaps">
+
+        <!-- Window Gaps -->
+        <key name="gaps-enabled" type="b">
+            <default>true</default>
+            <summary>Enable window gaps</summary>
+            <description>Add gaps around maximized and tiled windows.</description>
+        </key>
+        <key name="gap-size" type="i">
+            <default>8</default>
+            <summary>Gap size in pixels</summary>
+            <description>The size of gaps around tiled and maximized windows.</description>
+            <range min="0" max="64"/>
+        </key>
+        <key name="animation-delay" type="i">
+            <default>250</default>
+            <summary>Animation delay in ms</summary>
+            <description>Time to wait for GNOME's tiling animation before applying gaps.</description>
+            <range min="0" max="1000"/>
+        </key>
+
+        <!-- Rounded Corners -->
+        <key name="corners-enabled" type="b">
+            <default>true</default>
+            <summary>Enable rounded corners</summary>
+            <description>Force rounded corners on all windows including Chrome, Firefox, etc.</description>
+        </key>
+        <key name="corner-radius" type="i">
+            <default>12</default>
+            <summary>Corner radius in pixels</summary>
+            <description>The border radius applied to window corners.</description>
+            <range min="0" max="32"/>
+        </key>
+
+        <!-- Top Bar -->
+        <key name="topbar-enabled" type="b">
+            <default>true</default>
+            <summary>Enable transparent top bar</summary>
+            <description>Make the top bar transparent with pill-shaped indicators. Customize via stylesheet.css.</description>
+        </key>
+
+    </schema>
+</schemalist>
