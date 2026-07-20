@@ -1,14 +1,11 @@
 /**
  * Rounded Gaps - GNOME Shell Extension (GNOME 50, Mutter 18, Wayland)
  *
- * WinTile-style approach: disables GNOME's built-in edge tiling and
- * keybindings, handles all tiling ourselves with proper gaps.
- *
  * Features:
  * - Hyprland-style gaps for maximized and half-tiled windows
  * - Custom keybinding handling (Super+Arrow keys)
  * - Edge-drag detection for mouse-based tiling
- * - Transparent top bar (via stylesheet.css)
+ * - Transparent top bar with purple-themed quick settings
  * - Aggressive size enforcement (Brave/Chrome fix)
  *
  * License: GPL-3.0
@@ -21,7 +18,6 @@ import Shell from "gi://Shell";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 
-// Tile states for tracking window position
 const TileState = {
    NONE: 0,
    LEFT: 1,
@@ -35,49 +31,37 @@ export default class RoundedGapsExtension extends Extension {
       this._settings = null;
       this._signals = [];
       this._timeouts = [];
-      this._tileState = new Map(); // Meta.Window -> TileState
-      this._originalRects = new Map(); // Meta.Window -> {x, y, width, height}
-      this._tiledRects = new Map(); // Meta.Window -> {x, y, width, height} target after gaps
-      this._processing = new Set(); // Windows currently being repositioned
+      this._tileState = new Map();
+      this._originalRects = new Map();
+      this._tiledRects = new Map();
+      this._processing = new Set();
+      this._sizeSignals = new Map();
 
-      // Per-window size-changed signal IDs for aggressive enforcement
-      this._sizeSignals = new Map(); // Meta.Window -> signal id
-
-      // Saved GNOME settings to restore on disable
       this._savedEdgeTiling = null;
       this._savedTileLeft = null;
       this._savedTileRight = null;
       this._savedWmMaximize = null;
       this._savedWmUnmaximize = null;
 
-      // GSettings objects for mutter/wm
       this._mutterSettings = null;
       this._mutterKeybindingsSettings = null;
       this._wmKeybindingsSettings = null;
-
-      // Settings change connections
       this._settingsConnections = [];
+      this._quickSettingsSignal = null;
    }
 
    enable() {
       this._settings = this.getSettings();
 
-      if (this._getSetting("gaps-enabled", true)) {
-         this._enableGaps();
-      }
+      if (this._getSetting("gaps-enabled", true)) this._enableGaps();
 
-      if (this._getSetting("topbar-enabled", true)) {
-         this._enableTopBar();
-      }
+      if (this._getSetting("topbar-enabled", true)) this._enableTopBar();
 
-      // Watch for live settings changes
       this._settingsConnections.push(
          this._settings.connect("changed::gaps-enabled", () => {
             if (this._settings.get_boolean("gaps-enabled")) this._enableGaps();
             else this._disableGaps();
          }),
-      );
-      this._settingsConnections.push(
          this._settings.connect("changed::topbar-enabled", () => {
             if (this._settings.get_boolean("topbar-enabled"))
                this._enableTopBar();
@@ -90,18 +74,16 @@ export default class RoundedGapsExtension extends Extension {
       this._disableGaps();
       this._disableTopBar();
 
-      // Disconnect settings watchers
       if (this._settings) {
-         for (const id of this._settingsConnections) {
+         for (const id of this._settingsConnections)
             this._settings.disconnect(id);
-         }
       }
       this._settingsConnections = [];
       this._settings = null;
    }
 
    // =========================================================================
-   // SETTINGS HELPERS
+   // SETTINGS
    // =========================================================================
 
    _getSetting(key, defaultVal) {
@@ -120,35 +102,28 @@ export default class RoundedGapsExtension extends Extension {
    // =========================================================================
 
    _enableGaps() {
-      // --- Step 1: Disable GNOME's built-in edge tiling ---
       this._mutterSettings = new Gio.Settings({
          schema_id: "org.gnome.mutter",
       });
       this._savedEdgeTiling = this._mutterSettings.get_boolean("edge-tiling");
       this._mutterSettings.set_boolean("edge-tiling", false);
 
-      // --- Step 2: Disable mutter toggle-tiled-left/right keybindings ---
       this._mutterKeybindingsSettings = new Gio.Settings({
          schema_id: "org.gnome.mutter.keybindings",
       });
-      this._savedTileLeft =
-         this._mutterKeybindingsSettings.get_strv("toggle-tiled-left");
-      this._savedTileRight =
-         this._mutterKeybindingsSettings.get_strv("toggle-tiled-right");
+      this._savedTileLeft = this._mutterKeybindingsSettings.get_strv("toggle-tiled-left");
+      this._savedTileRight = this._mutterKeybindingsSettings.get_strv("toggle-tiled-right");
       this._mutterKeybindingsSettings.set_strv("toggle-tiled-left", []);
       this._mutterKeybindingsSettings.set_strv("toggle-tiled-right", []);
 
-      // --- Step 3: Disable default WM maximize/unmaximize keybindings ---
       this._wmKeybindingsSettings = new Gio.Settings({
          schema_id: "org.gnome.desktop.wm.keybindings",
       });
       this._savedWmMaximize = this._wmKeybindingsSettings.get_strv("maximize");
-      this._savedWmUnmaximize =
-         this._wmKeybindingsSettings.get_strv("unmaximize");
+      this._savedWmUnmaximize = this._wmKeybindingsSettings.get_strv("unmaximize");
       this._wmKeybindingsSettings.set_strv("maximize", []);
       this._wmKeybindingsSettings.set_strv("unmaximize", []);
 
-      // --- Step 4: Register our keybindings ---
       const bindingFlags = Meta.KeyBindingFlags.NONE;
       const bindingModes = Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW;
 
@@ -159,7 +134,6 @@ export default class RoundedGapsExtension extends Extension {
          bindingModes,
          this._onTileLeft.bind(this),
       );
-
       Main.wm.addKeybinding(
          "tile-right",
          this._settings,
@@ -167,7 +141,6 @@ export default class RoundedGapsExtension extends Extension {
          bindingModes,
          this._onTileRight.bind(this),
       );
-
       Main.wm.addKeybinding(
          "tile-maximize",
          this._settings,
@@ -175,7 +148,6 @@ export default class RoundedGapsExtension extends Extension {
          bindingModes,
          this._onTileMaximize.bind(this),
       );
-
       Main.wm.addKeybinding(
          "tile-restore",
          this._settings,
@@ -184,7 +156,7 @@ export default class RoundedGapsExtension extends Extension {
          this._onTileRestore.bind(this),
       );
 
-      // --- Step 5: Apply gaps to already maximized/tiled windows ---
+      // Apply gaps to existing maximized/tiled windows
       for (const actor of global.get_window_actors()) {
          const win = actor.meta_window;
          if (!win || win.get_window_type() !== Meta.WindowType.NORMAL) continue;
@@ -197,87 +169,71 @@ export default class RoundedGapsExtension extends Extension {
             this._addTimeout(100, () => {
                const rect = win.get_frame_rect();
                const workArea = win.get_work_area_current_monitor();
-               const halfWidth = Math.floor(workArea.width / 2);
-               if (rect.x < workArea.x + halfWidth) {
-                  this._tileWindow(win, TileState.LEFT);
-               } else {
-                  this._tileWindow(win, TileState.RIGHT);
-               }
+               const half = Math.floor(workArea.width / 2);
+               this._tileWindow(
+                  win,
+                  rect.x < workArea.x + half ? TileState.LEFT : TileState.RIGHT,
+               );
             });
          }
       }
 
-      // --- Step 6: Detect edge drags via grab-op-end ---
-      this._connectSignal(global.display, "grab-op-end", (display, window) => {
+      this._connectSignal(global.display, "grab-op-end", (_display, window) => {
          if (!window || window.get_window_type() !== Meta.WindowType.NORMAL)
             return;
          if (this._processing.has(window)) return;
-
-         this._addTimeout(50, () => {
-            this._detectEdgeDrag(window);
-         });
+         this._addTimeout(50, () => this._detectEdgeDrag(window));
       });
 
-      // --- Step 7: Track window destruction + apply gaps to newly created maximized windows ---
       this._connectSignal(
          global.display,
          "window-created",
-         (display, window) => {
-            if (window && window.get_window_type() === Meta.WindowType.NORMAL) {
-               const unmId = window.connect("unmanaged", () => {
-                  this._disconnectSizeSignal(window);
-                  this._tileState.delete(window);
-                  this._originalRects.delete(window);
-                  this._tiledRects.delete(window);
-                  this._processing.delete(window);
-                  try {
-                     window.disconnect(unmId);
-                  } catch (e) {}
-               });
-
-               // Check if window opens maximized (GNOME remembers last state)
-               this._addTimeout(300, () => {
-                  if (!window || this._processing.has(window)) return;
-                  const flags = this._getMaximizeFlags(window);
-                  if (flags === Meta.MaximizeFlags.BOTH) {
-                     this._tileWindow(window, TileState.MAXIMIZED);
-                  } else if (flags === Meta.MaximizeFlags.VERTICAL) {
-                     const rect = window.get_frame_rect();
-                     const workArea = window.get_work_area_current_monitor();
-                     const halfWidth = Math.floor(workArea.width / 2);
-                     if (rect.x < workArea.x + halfWidth) {
-                        this._tileWindow(window, TileState.LEFT);
-                     } else {
-                        this._tileWindow(window, TileState.RIGHT);
-                     }
-                  }
-               });
-            }
+         (_display, window) => {
+            if (!window || window.get_window_type() !== Meta.WindowType.NORMAL)
+               return;
+            const unmId = window.connect("unmanaged", () => {
+               this._disconnectSizeSignal(window);
+               this._tileState.delete(window);
+               this._originalRects.delete(window);
+               this._tiledRects.delete(window);
+               this._processing.delete(window);
+               try {
+                  window.disconnect(unmId);
+               } catch (e) {}
+            });
+            this._addTimeout(300, () => {
+               if (!window || this._processing.has(window)) return;
+               const flags = this._getMaximizeFlags(window);
+               if (flags === Meta.MaximizeFlags.BOTH) {
+                  this._tileWindow(window, TileState.MAXIMIZED);
+               } else if (flags === Meta.MaximizeFlags.VERTICAL) {
+                  const rect = window.get_frame_rect();
+                  const workArea = window.get_work_area_current_monitor();
+                  const half = Math.floor(workArea.width / 2);
+                  this._tileWindow(
+                     window,
+                     rect.x < workArea.x + half
+                        ? TileState.LEFT
+                        : TileState.RIGHT,
+                  );
+               }
+            });
          },
       );
    }
 
    _disableGaps() {
-      // Remove our keybindings
-      try {
-         Main.wm.removeKeybinding("tile-left");
-      } catch (e) {}
-      try {
-         Main.wm.removeKeybinding("tile-right");
-      } catch (e) {}
-      try {
-         Main.wm.removeKeybinding("tile-maximize");
-      } catch (e) {}
-      try {
-         Main.wm.removeKeybinding("tile-restore");
-      } catch (e) {}
+      ["tile-left", "tile-right", "tile-maximize", "tile-restore"].forEach(
+         (k) => {
+            try {
+               Main.wm.removeKeybinding(k);
+            } catch (e) {}
+         },
+      );
 
-      // Restore GNOME's edge-tiling
-      if (this._mutterSettings && this._savedEdgeTiling !== null) {
+      if (this._mutterSettings && this._savedEdgeTiling !== null)
          this._mutterSettings.set_boolean("edge-tiling", this._savedEdgeTiling);
-      }
 
-      // Restore mutter keybindings
       if (this._mutterKeybindingsSettings) {
          if (this._savedTileLeft !== null)
             this._mutterKeybindingsSettings.set_strv(
@@ -291,7 +247,6 @@ export default class RoundedGapsExtension extends Extension {
             );
       }
 
-      // Restore WM keybindings
       if (this._wmKeybindingsSettings) {
          if (this._savedWmMaximize !== null)
             this._wmKeybindingsSettings.set_strv(
@@ -308,13 +263,9 @@ export default class RoundedGapsExtension extends Extension {
       this._mutterSettings = null;
       this._mutterKeybindingsSettings = null;
       this._wmKeybindingsSettings = null;
-      this._savedEdgeTiling = null;
-      this._savedTileLeft = null;
-      this._savedTileRight = null;
-      this._savedWmMaximize = null;
-      this._savedWmUnmaximize = null;
+      this._savedEdgeTiling = this._savedTileLeft = this._savedTileRight = null;
+      this._savedWmMaximize = this._savedWmUnmaximize = null;
 
-      // Disconnect all per-window size signals
       for (const [win, sigId] of this._sizeSignals) {
          try {
             win.disconnect(sigId);
@@ -322,7 +273,6 @@ export default class RoundedGapsExtension extends Extension {
       }
       this._sizeSignals.clear();
 
-      // Disconnect all signals
       for (const signal of this._signals) {
          try {
             signal.obj.disconnect(signal.id);
@@ -330,13 +280,9 @@ export default class RoundedGapsExtension extends Extension {
       }
       this._signals = [];
 
-      // Clear all timeouts
-      for (const id of this._timeouts) {
-         GLib.source_remove(id);
-      }
+      for (const id of this._timeouts) GLib.source_remove(id);
       this._timeouts = [];
 
-      // Clear state
       this._tileState.clear();
       this._originalRects.clear();
       this._tiledRects.clear();
@@ -350,7 +296,6 @@ export default class RoundedGapsExtension extends Extension {
    _onTileLeft() {
       const win = global.display.focus_window;
       if (!win || win.get_window_type() !== Meta.WindowType.NORMAL) return;
-
       this._saveOriginalRect(win);
       this._tileWindow(win, TileState.LEFT);
    }
@@ -358,7 +303,6 @@ export default class RoundedGapsExtension extends Extension {
    _onTileRight() {
       const win = global.display.focus_window;
       if (!win || win.get_window_type() !== Meta.WindowType.NORMAL) return;
-
       this._saveOriginalRect(win);
       this._tileWindow(win, TileState.RIGHT);
    }
@@ -366,7 +310,6 @@ export default class RoundedGapsExtension extends Extension {
    _onTileMaximize() {
       const win = global.display.focus_window;
       if (!win || win.get_window_type() !== Meta.WindowType.NORMAL) return;
-
       this._saveOriginalRect(win);
       this._tileWindow(win, TileState.MAXIMIZED);
    }
@@ -374,14 +317,9 @@ export default class RoundedGapsExtension extends Extension {
    _onTileRestore() {
       const win = global.display.focus_window;
       if (!win || win.get_window_type() !== Meta.WindowType.NORMAL) return;
-
-      const currentState = this._tileState.get(win) || TileState.NONE;
-
-      if (currentState !== TileState.NONE) {
-         this._restoreWindow(win);
-      } else {
-         win.minimize();
-      }
+      const state = this._tileState.get(win) || TileState.NONE;
+      if (state !== TileState.NONE) this._restoreWindow(win);
+      else win.minimize();
    }
 
    // =========================================================================
@@ -391,24 +329,22 @@ export default class RoundedGapsExtension extends Extension {
    _detectEdgeDrag(win) {
       const rect = win.get_frame_rect();
       const workArea = win.get_work_area_current_monitor();
-
       const threshold = 5;
 
-      const atLeftEdge = Math.abs(rect.x - workArea.x) < threshold;
-      const atRightEdge =
+      const atLeft = Math.abs(rect.x - workArea.x) < threshold;
+      const atRight =
          Math.abs(rect.x + rect.width - (workArea.x + workArea.width)) <
          threshold;
-      const atTopEdge = Math.abs(rect.y - workArea.y) < threshold;
-
+      const atTop = Math.abs(rect.y - workArea.y) < threshold;
       const fillsHeight = rect.height >= workArea.height - threshold * 2;
 
-      if (atTopEdge && !atLeftEdge && !atRightEdge) {
+      if (atTop && !atLeft && !atRight) {
          this._saveOriginalRect(win);
          this._tileWindow(win, TileState.MAXIMIZED);
-      } else if (atLeftEdge && fillsHeight) {
+      } else if (atLeft && fillsHeight) {
          this._saveOriginalRect(win);
          this._tileWindow(win, TileState.LEFT);
-      } else if (atRightEdge && fillsHeight) {
+      } else if (atRight && fillsHeight) {
          this._saveOriginalRect(win);
          this._tileWindow(win, TileState.RIGHT);
       }
@@ -419,8 +355,8 @@ export default class RoundedGapsExtension extends Extension {
    // =========================================================================
 
    _saveOriginalRect(win) {
-      const currentState = this._tileState.get(win) || TileState.NONE;
-      if (currentState === TileState.NONE && !this._originalRects.has(win)) {
+      const state = this._tileState.get(win) || TileState.NONE;
+      if (state === TileState.NONE && !this._originalRects.has(win)) {
          const rect = win.get_frame_rect();
          this._originalRects.set(win, {
             x: rect.x,
@@ -434,7 +370,7 @@ export default class RoundedGapsExtension extends Extension {
    _calculateTileRect(win, state) {
       const gap = this._getSetting("gap-size", 8);
       const workArea = win.get_work_area_current_monitor();
-      const halfWidth = Math.floor(workArea.width / 2);
+      const half = Math.floor(workArea.width / 2);
 
       switch (state) {
          case TileState.MAXIMIZED:
@@ -444,33 +380,25 @@ export default class RoundedGapsExtension extends Extension {
                width: workArea.width - gap * 2,
                height: workArea.height - gap * 2,
             };
-
          case TileState.LEFT:
             return {
                x: workArea.x + gap,
                y: workArea.y + gap,
-               width: halfWidth - gap - Math.floor(gap / 2),
+               width: half - gap - Math.floor(gap / 2),
                height: workArea.height - gap * 2,
             };
-
          case TileState.RIGHT:
             return {
-               x: workArea.x + halfWidth + Math.floor(gap / 2),
+               x: workArea.x + half + Math.floor(gap / 2),
                y: workArea.y + gap,
-               width: halfWidth - gap - Math.floor(gap / 2),
+               width: half - gap - Math.floor(gap / 2),
                height: workArea.height - gap * 2,
             };
-
          default:
             return null;
       }
    }
 
-   /**
-    * Tile a window to the given state with gaps.
-    * After tiling, connects a size-changed signal to aggressively
-    * enforce the correct size if the app tries to resize itself.
-    */
    _tileWindow(win, state) {
       if (this._processing.has(win)) return;
 
@@ -481,11 +409,8 @@ export default class RoundedGapsExtension extends Extension {
       this._tileState.set(win, state);
       this._tiledRects.set(win, target);
 
-      // If the window is currently maximized by GNOME, unmaximize first
       const flags = this._getMaximizeFlags(win);
-      if (flags !== 0) {
-         this._unmaximizeWindow(win, flags);
-      }
+      if (flags !== 0) this._unmaximizeWindow(win, flags);
 
       const delay = flags !== 0 ? this._getSetting("animation-delay", 250) : 50;
 
@@ -499,11 +424,7 @@ export default class RoundedGapsExtension extends Extension {
                target.width,
                target.height,
             );
-         } catch (e) {
-            log(`[Rounded Gaps] Error tiling window: ${e.message}`);
-         }
-
-         // Connect aggressive size enforcement after initial tile
+         } catch (e) {}
          this._addTimeout(100, () => {
             this._connectSizeEnforcement(win);
             this._processing.delete(win);
@@ -511,30 +432,19 @@ export default class RoundedGapsExtension extends Extension {
       });
    }
 
-   /**
-    * Connect a size-changed signal on the window. If the window resizes
-    * beyond what we set, immediately force it back. This handles apps
-    * like Brave, Chrome, etc. that fight the resize.
-    */
    _connectSizeEnforcement(win) {
-      // Disconnect any existing signal first
       this._disconnectSizeSignal(win);
-
       const sigId = win.connect("size-changed", () => {
          if (this._processing.has(win)) return;
-
          const saved = this._tiledRects.get(win);
          if (!saved) return;
-
          const rect = win.get_frame_rect();
-
-         // If the window deviates from our target by more than 2px, force it back
-         const dx = Math.abs(rect.x - saved.x);
-         const dy = Math.abs(rect.y - saved.y);
-         const dw = Math.abs(rect.width - saved.width);
-         const dh = Math.abs(rect.height - saved.height);
-
-         if (dx > 2 || dy > 2 || dw > 2 || dh > 2) {
+         if (
+            Math.abs(rect.x - saved.x) > 2 ||
+            Math.abs(rect.y - saved.y) > 2 ||
+            Math.abs(rect.width - saved.width) > 2 ||
+            Math.abs(rect.height - saved.height) > 2
+         ) {
             this._processing.add(win);
             try {
                win.move_frame(true, saved.x, saved.y);
@@ -546,19 +456,12 @@ export default class RoundedGapsExtension extends Extension {
                   saved.height,
                );
             } catch (e) {}
-            // Brief lock to prevent signal loop
-            this._addTimeout(50, () => {
-               this._processing.delete(win);
-            });
+            this._addTimeout(50, () => this._processing.delete(win));
          }
       });
-
       this._sizeSignals.set(win, sigId);
    }
 
-   /**
-    * Disconnect the size enforcement signal from a window.
-    */
    _disconnectSizeSignal(win) {
       const sigId = this._sizeSignals.get(win);
       if (sigId !== undefined) {
@@ -569,18 +472,13 @@ export default class RoundedGapsExtension extends Extension {
       }
    }
 
-   /**
-    * Restore a window to its original size and position.
-    */
    _restoreWindow(win) {
       if (this._processing.has(win)) return;
-
       const original = this._originalRects.get(win);
       this._tileState.set(win, TileState.NONE);
       this._tiledRects.delete(win);
       this._disconnectSizeSignal(win);
       this._processing.add(win);
-
       if (original) {
          try {
             win.move_frame(true, original.x, original.y);
@@ -591,19 +489,14 @@ export default class RoundedGapsExtension extends Extension {
                original.width,
                original.height,
             );
-         } catch (e) {
-            log(`[Rounded Gaps] Error restoring window: ${e.message}`);
-         }
+         } catch (e) {}
          this._originalRects.delete(win);
       }
-
-      this._addTimeout(300, () => {
-         this._processing.delete(win);
-      });
+      this._addTimeout(300, () => this._processing.delete(win));
    }
 
    // =========================================================================
-   // MUTTER 18 COMPATIBILITY HELPERS
+   // MUTTER 18 COMPATIBILITY
    // =========================================================================
 
    _getMaximizeFlags(win) {
@@ -647,29 +540,28 @@ export default class RoundedGapsExtension extends Extension {
    }
 
    // =========================================================================
-   // TOP BAR (TRANSPARENT)
+   // TOP BAR
    // =========================================================================
 
    _enableTopBar() {
       Main.panel.add_style_class_name("transparent-panel");
       Main.panel.set_style(
-         "background-color: transparent; border: none; box-shadow: none;"
+         "background-color: transparent; border: none; box-shadow: none;",
       );
 
-      // QuickSettingsMenu extends PopupMenu — use open-state-changed
       const qs = Main.panel.statusArea.quickSettings;
       if (qs?.menu) {
          this._quickSettingsSignal = qs.menu.connect(
             "open-state-changed",
             (_menu, open) => {
                if (open) {
-                  this._addTimeout(50,  () => this._recolorEverything());
-                  this._addTimeout(300, () => this._recolorEverything());
+                  this._addTimeout(50, () => this._recolorQuickSettings());
+                  this._addTimeout(300, () => this._recolorQuickSettings());
                }
-            }
+            },
          );
-         // Also recolor on first load in case menu was already built
-         this._addTimeout(1000, () => this._recolorEverything());
+         // Recolor once on load in case tiles are already built
+         this._addTimeout(1000, () => this._recolorQuickSettings());
       }
    }
 
@@ -679,79 +571,75 @@ export default class RoundedGapsExtension extends Extension {
 
       const qs = Main.panel.statusArea.quickSettings;
       if (qs?.menu && this._quickSettingsSignal) {
-         try { qs.menu.disconnect(this._quickSettingsSignal); } catch (e) {}
+         try {
+            qs.menu.disconnect(this._quickSettingsSignal);
+         } catch (e) {}
       }
       this._quickSettingsSignal = null;
    }
 
    /**
-    * Recolor quick-settings popup using the REAL class names from GNOME source:
+    * Walk the quick-settings grid and apply purple theming to elements
+    * that can't be styled via CSS alone (barlevel fill, chevron icons).
     *
-    *  Arrow/chevron on split tiles  → "quick-toggle-menu-button icon-button"
-    *  Slider drawing widget         → "barlevel" (inside "slider" inside "slider-bin")
-    *  Slider icon buttons           → "icon-button flat" inside "quick-slider"
+    * Class names sourced from GNOME Shell JS:
+    *   "quick-toggle-menu-button" — split-tile chevron button
+    *   "quick-toggle-separator"   — divider between label and chevron
+    *   "barlevel"                 — slider fill bar
+    *   "icon-button" in "quick-slider" — mute/settings icon next to slider
     */
-   _recolorEverything() {
+   _recolorQuickSettings() {
       try {
          const qs = Main.panel.statusArea.quickSettings;
          if (!qs) return;
 
-         // _grid is the St.Widget with class "quick-settings-grid" — it contains
-         // all the tiles and sliders directly. Walking from here reaches barlevel.
+         // Walk from _grid to reach all tiles and sliders
          const root = qs.menu._grid ?? qs.menu.box ?? qs.menu.actor ?? qs.menu;
 
          this._walkActor(root, (actor) => {
-            const sc  = actor.get_style_class_name?.() ?? "";
+            const sc = actor.get_style_class_name?.() ?? "";
             const psc = actor.get_parent?.()?.get_style_class_name?.() ?? "";
 
-            // Split-tile arrow/chevron — real class: "quick-toggle-menu-button icon-button"
             if (sc.includes("quick-toggle-menu-button")) {
                actor.set_style(
                   "color: #a277ff;" +
-                  "background-color: rgba(162,119,255,0.18);" +
-                  "border-radius: 0 14px 14px 0;" +
-                  "border: none;" +
-                  "border-left: 1px solid rgba(162,119,255,0.25);"
+                     "background-color: rgba(162,119,255,0.18);" +
+                     "border-radius: 0 14px 14px 0;" +
+                     "border: none;" +
+                     "border-left: 1px solid rgba(162,119,255,0.25);",
                );
             }
 
-            // Icons inside chevron button
             if (psc.includes("quick-toggle-menu-button")) {
                actor.set_style("color: #a277ff;");
             }
 
-            // Separator between tile text and arrow — hide it
             if (sc.includes("quick-toggle-separator")) {
                actor.set_style("background-color: transparent; width: 0;");
             }
 
-            // Bar level fill — real class: "barlevel"
             if (sc.includes("barlevel")) {
                actor.set_style(
                   "-barlevel-background-color: rgba(162,119,255,0.25);" +
-                  "-barlevel-active-background-color: #a277ff;" +
-                  "-barlevel-overdrive-color: #c9b0ff;"
+                     "-barlevel-active-background-color: #a277ff;" +
+                     "-barlevel-overdrive-color: #c9b0ff;",
                );
             }
 
-            // Icon buttons next to sliders — "icon-button flat" inside "quick-slider"
             if (sc.includes("icon-button") && psc.includes("quick-slider")) {
                actor.set_style("color: #a277ff;");
             }
          });
-
-      } catch (e) {
-         log(`[Rounded Gaps] _recolorEverything error: ${e.message}`);
-      }
+      } catch (e) {}
    }
 
-   /** Recursively walk actor tree, calling cb on every node */
    _walkActor(actor, cb) {
       if (!actor) return;
-      try { cb(actor); } catch (e) {}
+      try {
+         cb(actor);
+      } catch (e) {}
       const n = actor.get_n_children?.() ?? 0;
-      for (let i = 0; i < n; i++) {
+      for (let i = 0; i < n; i++)
          this._walkActor(actor.get_child_at_index(i), cb);
-      }
    }
 }

@@ -55,7 +55,7 @@
    margin: 0;
 }
 
-/* ============ QUICK SETTINGS POPUP SHELL ============ */
+/* ============ QUICK SETTINGS POPUP ============ */
 .quick-settings-system-item,
 .quick-settings {
    background-color: transparent !important;
@@ -63,9 +63,9 @@
    box-shadow: none !important;
 }
 
-/* The actual popup content box — 30% solid */
+/* Popup content box — 50% solid */
 .popup-menu-content {
-   background-color: rgba(21, 20, 27, 0.30) !important;
+   background-color: rgba(21, 20, 27, 0.50) !important;
    border: 1px solid rgba(162, 119, 255, 0.22) !important;
    border-radius: 16px !important;
    padding: 6px 8px !important;
@@ -73,27 +73,22 @@
    box-shadow: none !important;
 }
 
-/* ============ QUICK SETTINGS TILES ============ */
-/* Inactive tile */
+/* ============ TILES ============ */
 .quick-toggle,
 .quick-menu-toggle {
-   background-color: rgba(31, 30, 43, 0.55) !important;
+   background-color: rgba(31, 30, 43, 0.65) !important;
    border: 1px solid rgba(162, 119, 255, 0.18) !important;
    border-radius: 14px !important;
    color: #a277ff !important;
 }
 
 .quick-toggle StLabel,
-.quick-menu-toggle StLabel {
-   color: #a277ff !important;
-}
-
+.quick-menu-toggle StLabel,
 .quick-toggle StIcon,
 .quick-menu-toggle StIcon {
    color: #a277ff !important;
 }
 
-/* Hover */
 .quick-toggle:hover,
 .quick-menu-toggle:hover {
    background-color: rgba(162, 119, 255, 0.15) !important;
@@ -108,7 +103,6 @@
    color: #c9b0ff !important;
 }
 
-/* Active / ON */
 .quick-toggle:checked,
 .quick-menu-toggle:checked {
    background-color: rgba(162, 119, 255, 0.30) !important;
@@ -123,13 +117,15 @@
    color: #e0d0ff !important;
 }
 
-/* ---- Separator between tile label and arrow — hide it ---- */
+/* Separator between tile label and arrow — hidden */
 .quick-toggle-separator {
    background-color: transparent !important;
    width: 0 !important;
    margin: 0 !important;
    padding: 0 !important;
 }
+
+/* Arrow/chevron button on split tiles */
 .quick-toggle-menu-button {
    background-color: rgba(162, 119, 255, 0.15) !important;
    border-radius: 0 14px 14px 0 !important;
@@ -158,15 +154,7 @@
    color: #e0d0ff !important;
 }
 
-/* ---- Bar level (slider fill) — real class: barlevel ---- */
-.barlevel {
-   -barlevel-background-color: rgba(162, 119, 255, 0.25) !important;
-   -barlevel-active-background-color: #a277ff !important;
-   -barlevel-overdrive-color: #c9b0ff !important;
-   color: #a277ff !important;
-}
-
-/* ============ SLIDERS (Volume / Brightness) ============ */
+/* ============ SLIDERS ============ */
 .slider {
    color: #a277ff;
 }
@@ -178,10 +166,7 @@
    color: #a277ff;
 }
 
-.quick-slider StIcon {
-   color: #a277ff !important;
-}
-
+.quick-slider StIcon,
 .quick-slider .icon-button {
    color: #a277ff !important;
 }
@@ -189,7 +174,7 @@
 /* ============ TOP ICON ROW (battery, settings, lock, power) ============ */
 .quick-settings-system-item StButton,
 .button.icon-button {
-   background-color: rgba(31, 30, 43, 0.55) !important;
+   background-color: rgba(31, 30, 43, 0.65) !important;
    border: 1px solid rgba(162, 119, 255, 0.18) !important;
    border-radius: 10px !important;
    color: #a277ff !important;
@@ -217,7 +202,6 @@
 }
 
 /* ============ GENERIC POPUP MENUS ============ */
-/* Outer shell must be fully transparent — visuals live on .popup-menu-content only */
 .popup-menu,
 .panel-menu {
    background-color: transparent !important;
@@ -248,7 +232,6 @@
    color: #a277ff;
 }
 
-/* Separators */
 .popup-separator-menu-item StWidget {
    background-color: rgba(162, 119, 255, 0.2);
    height: 1px;
