@@ -1,53 +1,50 @@
-
-
 /* ============ PANEL ============ */
 #panel {
-    background-color: transparent !important;
-    box-shadow: none;
-    height: 32px;
+   background-color: transparent !important;
+   box-shadow: none;
+   height: 32px;
 }
 
 #panel .panel-corner {
-    -panel-corner-background-color: transparent;
+   -panel-corner-background-color: transparent;
 }
 
 /* ============ PANEL BUTTONS (Pills) ============ */
 #panel .panel-button {
-    background-color: rgba(21, 20, 27, 0.5);
-    border-radius: 10px;
-    padding: 0 12px;
-    margin: 4px 3px;
-    color: #edecee;
-    text-align: center;
-    -natural-hpadding: 12px;
-    -minimum-hpadding: 8px;
-    border: 1px solid rgba(162, 119, 255, 0.15);
+   background-color: rgba(21, 20, 27, 0.5);
+   border-radius: 10px;
+   padding: 0 12px;
+   margin: 4px 3px;
+   color: #a277ff;
+   text-align: center;
+   -natural-hpadding: 12px;
+   -minimum-hpadding: 8px;
+   border: 1px solid rgba(162, 119, 255, 0.15);
 }
 
 #panel .panel-button:hover {
-    background-color: rgba(45, 43, 56, 0.95);
-    border: 1px solid rgba(162, 119, 255, 0.35);
+   background-color: rgba(45, 43, 56, 0.95);
+   border: 1px solid rgba(162, 119, 255, 0.35);
 }
 
 #panel .panel-button:active,
 #panel .panel-button:checked,
 #panel .panel-button:focus {
-    background-color: rgba(61, 55, 94, 0.9);
-    border: 1px solid rgba(162, 119, 255, 0.5);
+   background-color: rgba(61, 55, 94, 0.9);
+   border: 1px solid rgba(162, 119, 255, 0.5);
 }
 
 /* ============ CLOCK ============ */
 #panel .panel-button.clock-display {
-    margin: 4px 3px;
-    padding: 0 10px;
-    -natural-hpadding: 10px;
-    -minimum-hpadding: 6px;
-    border-radius: 10px;
-    color: #a277ff;
-    font-weight: bold;
+   margin: 4px 3px;
+   padding: 0 10px;
+   -natural-hpadding: 10px;
+   -minimum-hpadding: 6px;
+   border-radius: 10px;
+   font-weight: bold;
 }
 
 #panel .panel-button.clock-display StLabel {
-    padding: 0;
-    margin: 0;
+   padding: 0;
+   margin: 0;
 }

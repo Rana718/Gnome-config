@@ -41,5 +41,27 @@
             <description>Make the top bar transparent with pill-shaped indicators. Customize via stylesheet.css.</description>
         </key>
 
+        <!-- Keybindings for WinTile-style tiling -->
+        <key name="tile-left" type="as">
+            <default>['&lt;Super&gt;Left']</default>
+            <summary>Tile window left</summary>
+            <description>Tile the focused window to the left half of the screen with gaps.</description>
+        </key>
+        <key name="tile-right" type="as">
+            <default>['&lt;Super&gt;Right']</default>
+            <summary>Tile window right</summary>
+            <description>Tile the focused window to the right half of the screen with gaps.</description>
+        </key>
+        <key name="tile-maximize" type="as">
+            <default>['&lt;Super&gt;Up']</default>
+            <summary>Maximize window with gaps</summary>
+            <description>Maximize the focused window with gaps on all sides.</description>
+        </key>
+        <key name="tile-restore" type="as">
+            <default>['&lt;Super&gt;Down']</default>
+            <summary>Restore/minimize window</summary>
+            <description>Restore a tiled window to its original size, or minimize if already restored.</description>
+        </key>
+
     </schema>
 </schemalist>
