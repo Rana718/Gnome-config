@@ -23,14 +23,14 @@
 }
 
 #panel .panel-button:hover {
-   background-color: rgba(45, 43, 56, 0.95);
+   background-color: rgba(21, 20, 27);
    border: 1px solid rgba(162, 119, 255, 0.35);
 }
 
 #panel .panel-button:active,
 #panel .panel-button:checked,
 #panel .panel-button:focus {
-   background-color: rgba(61, 55, 94, 0.9);
+   background-color: rgba(31, 30, 43);
    border: 1px solid rgba(162, 119, 255, 0.5);
 }
 
