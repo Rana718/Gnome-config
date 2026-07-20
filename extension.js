@@ -652,11 +652,106 @@ export default class RoundedGapsExtension extends Extension {
 
    _enableTopBar() {
       Main.panel.add_style_class_name("transparent-panel");
-      Main.panel.set_style("background-color: transparent;");
+      Main.panel.set_style(
+         "background-color: transparent; border: none; box-shadow: none;"
+      );
+
+      // QuickSettingsMenu extends PopupMenu — use open-state-changed
+      const qs = Main.panel.statusArea.quickSettings;
+      if (qs?.menu) {
+         this._quickSettingsSignal = qs.menu.connect(
+            "open-state-changed",
+            (_menu, open) => {
+               if (open) {
+                  this._addTimeout(50,  () => this._recolorEverything());
+                  this._addTimeout(300, () => this._recolorEverything());
+               }
+            }
+         );
+         // Also recolor on first load in case menu was already built
+         this._addTimeout(1000, () => this._recolorEverything());
+      }
    }
 
    _disableTopBar() {
       Main.panel.remove_style_class_name("transparent-panel");
       Main.panel.set_style("");
+
+      const qs = Main.panel.statusArea.quickSettings;
+      if (qs?.menu && this._quickSettingsSignal) {
+         try { qs.menu.disconnect(this._quickSettingsSignal); } catch (e) {}
+      }
+      this._quickSettingsSignal = null;
+   }
+
+   /**
+    * Recolor quick-settings popup using the REAL class names from GNOME source:
+    *
+    *  Arrow/chevron on split tiles  → "quick-toggle-menu-button icon-button"
+    *  Slider drawing widget         → "barlevel" (inside "slider" inside "slider-bin")
+    *  Slider icon buttons           → "icon-button flat" inside "quick-slider"
+    */
+   _recolorEverything() {
+      try {
+         const qs = Main.panel.statusArea.quickSettings;
+         if (!qs) return;
+
+         // _grid is the St.Widget with class "quick-settings-grid" — it contains
+         // all the tiles and sliders directly. Walking from here reaches barlevel.
+         const root = qs.menu._grid ?? qs.menu.box ?? qs.menu.actor ?? qs.menu;
+
+         this._walkActor(root, (actor) => {
+            const sc  = actor.get_style_class_name?.() ?? "";
+            const psc = actor.get_parent?.()?.get_style_class_name?.() ?? "";
+
+            // Split-tile arrow/chevron — real class: "quick-toggle-menu-button icon-button"
+            if (sc.includes("quick-toggle-menu-button")) {
+               actor.set_style(
+                  "color: #a277ff;" +
+                  "background-color: rgba(162,119,255,0.18);" +
+                  "border-radius: 0 14px 14px 0;" +
+                  "border: none;" +
+                  "border-left: 1px solid rgba(162,119,255,0.25);"
+               );
+            }
+
+            // Icons inside chevron button
+            if (psc.includes("quick-toggle-menu-button")) {
+               actor.set_style("color: #a277ff;");
+            }
+
+            // Separator between tile text and arrow — hide it
+            if (sc.includes("quick-toggle-separator")) {
+               actor.set_style("background-color: transparent; width: 0;");
+            }
+
+            // Bar level fill — real class: "barlevel"
+            if (sc.includes("barlevel")) {
+               actor.set_style(
+                  "-barlevel-background-color: rgba(162,119,255,0.25);" +
+                  "-barlevel-active-background-color: #a277ff;" +
+                  "-barlevel-overdrive-color: #c9b0ff;"
+               );
+            }
+
+            // Icon buttons next to sliders — "icon-button flat" inside "quick-slider"
+            if (sc.includes("icon-button") && psc.includes("quick-slider")) {
+               actor.set_style("color: #a277ff;");
+            }
+         });
+
+      } catch (e) {
+         log(`[Rounded Gaps] _recolorEverything error: ${e.message}`);
+      }
+   }
+
+   /** Recursively walk actor tree, calling cb on every node */
+   _walkActor(actor, cb) {
+      if (!actor) return;
+      try { cb(actor); } catch (e) {}
+      const n = actor.get_n_children?.() ?? 0;
+      for (let i = 0; i < n; i++) {
+         this._walkActor(actor.get_child_at_index(i), cb);
+      }
    }
 }

@@ -1,12 +1,16 @@
 /* ============ PANEL ============ */
 #panel {
    background-color: transparent !important;
-   box-shadow: none;
+   box-shadow: none !important;
+   border: none !important;
+   border-image: none !important;
    height: 32px;
 }
 
 #panel .panel-corner {
-   -panel-corner-background-color: transparent;
+   -panel-corner-background-color: transparent !important;
+   -panel-corner-border-color: transparent !important;
+   -panel-corner-opacity: 0 !important;
 }
 
 /* ============ PANEL BUTTONS (Pills) ============ */
@@ -23,15 +27,17 @@
 }
 
 #panel .panel-button:hover {
-   background-color: rgba(21, 20, 27);
+   background-color: rgba(21, 20, 27, 0.85);
    border: 1px solid rgba(162, 119, 255, 0.35);
+   color: #a277ff;
 }
 
 #panel .panel-button:active,
 #panel .panel-button:checked,
 #panel .panel-button:focus {
-   background-color: rgba(31, 30, 43);
+   background-color: rgba(31, 30, 43, 0.95);
    border: 1px solid rgba(162, 119, 255, 0.5);
+   color: #a277ff;
 }
 
 /* ============ CLOCK ============ */
@@ -47,4 +53,208 @@
 #panel .panel-button.clock-display StLabel {
    padding: 0;
    margin: 0;
+}
+
+/* ============ QUICK SETTINGS POPUP SHELL ============ */
+.quick-settings-system-item,
+.quick-settings {
+   background-color: transparent !important;
+   border: none !important;
+   box-shadow: none !important;
+}
+
+/* The actual popup content box — 30% solid */
+.popup-menu-content {
+   background-color: rgba(21, 20, 27, 0.30) !important;
+   border: 1px solid rgba(162, 119, 255, 0.22) !important;
+   border-radius: 16px !important;
+   padding: 6px 8px !important;
+   color: #a277ff !important;
+   box-shadow: none !important;
+}
+
+/* ============ QUICK SETTINGS TILES ============ */
+/* Inactive tile */
+.quick-toggle,
+.quick-menu-toggle {
+   background-color: rgba(31, 30, 43, 0.55) !important;
+   border: 1px solid rgba(162, 119, 255, 0.18) !important;
+   border-radius: 14px !important;
+   color: #a277ff !important;
+}
+
+.quick-toggle StLabel,
+.quick-menu-toggle StLabel {
+   color: #a277ff !important;
+}
+
+.quick-toggle StIcon,
+.quick-menu-toggle StIcon {
+   color: #a277ff !important;
+}
+
+/* Hover */
+.quick-toggle:hover,
+.quick-menu-toggle:hover {
+   background-color: rgba(162, 119, 255, 0.15) !important;
+   border: 1px solid rgba(162, 119, 255, 0.35) !important;
+   color: #c9b0ff !important;
+}
+
+.quick-toggle:hover StLabel,
+.quick-menu-toggle:hover StLabel,
+.quick-toggle:hover StIcon,
+.quick-menu-toggle:hover StIcon {
+   color: #c9b0ff !important;
+}
+
+/* Active / ON */
+.quick-toggle:checked,
+.quick-menu-toggle:checked {
+   background-color: rgba(162, 119, 255, 0.30) !important;
+   border: 1px solid rgba(162, 119, 255, 0.55) !important;
+   color: #e0d0ff !important;
+}
+
+.quick-toggle:checked StLabel,
+.quick-menu-toggle:checked StLabel,
+.quick-toggle:checked StIcon,
+.quick-menu-toggle:checked StIcon {
+   color: #e0d0ff !important;
+}
+
+/* ---- Separator between tile label and arrow — hide it ---- */
+.quick-toggle-separator {
+   background-color: transparent !important;
+   width: 0 !important;
+   margin: 0 !important;
+   padding: 0 !important;
+}
+.quick-toggle-menu-button {
+   background-color: rgba(162, 119, 255, 0.15) !important;
+   border-radius: 0 14px 14px 0 !important;
+   border: none !important;
+   border-left: 1px solid rgba(162, 119, 255, 0.2) !important;
+   color: #a277ff !important;
+}
+
+.quick-toggle-menu-button StIcon {
+   color: #a277ff !important;
+}
+
+.quick-toggle-menu-button:hover {
+   background-color: rgba(162, 119, 255, 0.30) !important;
+   color: #c9b0ff !important;
+}
+
+.quick-toggle-menu-button:hover StIcon {
+   color: #c9b0ff !important;
+}
+
+.quick-toggle:checked .quick-toggle-menu-button,
+.quick-menu-toggle:checked .quick-toggle-menu-button {
+   background-color: rgba(162, 119, 255, 0.22) !important;
+   border-left: 1px solid rgba(162, 119, 255, 0.4) !important;
+   color: #e0d0ff !important;
+}
+
+/* ---- Bar level (slider fill) — real class: barlevel ---- */
+.barlevel {
+   -barlevel-background-color: rgba(162, 119, 255, 0.25) !important;
+   -barlevel-active-background-color: #a277ff !important;
+   -barlevel-overdrive-color: #c9b0ff !important;
+   color: #a277ff !important;
+}
+
+/* ============ SLIDERS (Volume / Brightness) ============ */
+.slider {
+   color: #a277ff;
+}
+
+.barlevel {
+   -barlevel-background-color: rgba(162, 119, 255, 0.25);
+   -barlevel-active-background-color: #a277ff;
+   -barlevel-overdrive-color: #c9b0ff;
+   color: #a277ff;
+}
+
+.quick-slider StIcon {
+   color: #a277ff !important;
+}
+
+.quick-slider .icon-button {
+   color: #a277ff !important;
+}
+
+/* ============ TOP ICON ROW (battery, settings, lock, power) ============ */
+.quick-settings-system-item StButton,
+.button.icon-button {
+   background-color: rgba(31, 30, 43, 0.55) !important;
+   border: 1px solid rgba(162, 119, 255, 0.18) !important;
+   border-radius: 10px !important;
+   color: #a277ff !important;
+}
+
+.quick-settings-system-item StButton:hover,
+.button.icon-button:hover {
+   background-color: rgba(162, 119, 255, 0.2) !important;
+   border: 1px solid rgba(162, 119, 255, 0.4) !important;
+   color: #c9b0ff !important;
+}
+
+.quick-settings-system-item StButton StIcon,
+.button.icon-button StIcon {
+   color: #a277ff !important;
+}
+
+.quick-settings-system-item StButton:hover StIcon,
+.button.icon-button:hover StIcon {
+   color: #c9b0ff !important;
+}
+
+.power-item StLabel {
+   color: #a277ff !important;
+}
+
+/* ============ GENERIC POPUP MENUS ============ */
+/* Outer shell must be fully transparent — visuals live on .popup-menu-content only */
+.popup-menu,
+.panel-menu {
+   background-color: transparent !important;
+   border: none !important;
+   box-shadow: none !important;
+   color: #a277ff;
+}
+
+.popup-menu-item {
+   color: #a277ff;
+   border-radius: 8px;
+   padding: 6px 14px;
+}
+
+.popup-menu-item:hover,
+.popup-menu-item:focus {
+   background-color: rgba(162, 119, 255, 0.2);
+   color: #c9b0ff;
+}
+
+.popup-menu-item:active {
+   background-color: rgba(162, 119, 255, 0.35);
+   color: #e0d0ff;
+}
+
+.popup-menu-item:checked {
+   background-color: rgba(162, 119, 255, 0.15);
+   color: #a277ff;
+}
+
+/* Separators */
+.popup-separator-menu-item StWidget {
+   background-color: rgba(162, 119, 255, 0.2);
+   height: 1px;
+}
+
+.popup-menu-item .popup-menu-item-expander,
+.popup-menu-ornament {
+   color: rgba(162, 119, 255, 0.6);
 }
