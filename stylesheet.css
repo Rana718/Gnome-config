@@ -1,6 +1,4 @@
-/* Rounded Gaps - Top Bar Stylesheet (Aura Dark Theme) */
-/* Edit this file to customize your top bar */
-/* Changes require log out / log in to take effect */
+
 
 /* ============ PANEL ============ */
 #panel {
@@ -15,7 +13,7 @@
 
 /* ============ PANEL BUTTONS (Pills) ============ */
 #panel .panel-button {
-    background-color: rgba(21, 20, 27, 0.85);
+    background-color: rgba(21, 20, 27, 0.5);
     border-radius: 10px;
     padding: 0 12px;
     margin: 4px 3px;
